@@ -1,8 +1,6 @@
-# agent.py
 import random
-from collections import deque
+from collections import deque 
 import heapq
-
 
 class GreedyGridAgent:
     """A simple agent that tries to move around systematically to clear the grid."""
@@ -16,9 +14,65 @@ class GreedyGridAgent:
         # Simple heuristic or fallback random sweep
         return random.choice(self.actions_pool)
 
-
 class SearchAgent:
     """An agent that computes paths using standard search algorithms."""
+    
+    def __init__(self):
+        self.plan = []
+        self.active_algo = 'BFS'
+        
+    def sense_and_act(self, percept: dict) -> str:
+        # If the plan is empty, we need to calculate a new path
+        if not self.plan:
+            agent_pos = percept['agent_pos']
+            all_food = percept.get('all_food', [])
+            
+            # Edge case: If there's no food left, stay still
+            if not all_food:
+                return 'Stop'
+                
+            # Find the closest food pellet using Manhattan distance
+            closest_food = min(
+                all_food, 
+                key=lambda f: abs(f[0] - agent_pos[0]) + abs(f[1] - agent_pos[1])
+            )
+            
+            # Formulate the search problem for the algorithms
+            class PositionSearchProblem:
+                def get_start_state(self):
+                    return agent_pos
+                    
+                def is_goal_state(self, state):
+                    return state == closest_food
+                    
+                def get_successors(self, state):
+                    x, y = state
+                    successors = []
+                    # Assuming percept provides walls, default to empty set if not
+                    walls = set(percept.get('walls', [])) 
+                    # 4-way movement actions
+                    for action, dx, dy in [('Up', 0, -1), ('Down', 0, 1), ('Left', -1, 0), ('Right', 1, 0)]:
+                        next_state = (x + dx, y + dy)
+                        if next_state not in walls:
+                            # Return tuple: (next_state, action, cost)
+                            successors.append((next_state, action, 1))
+                    return successors
+
+            problem = PositionSearchProblem()
+            
+            # Execute the search method matching self.active_algo
+            if self.active_algo == 'BFS':
+                self.plan = self.bfs_search(problem)
+            elif self.active_algo == 'DFS':
+                self.plan = self.dfs_search(problem)
+            elif self.active_algo == 'UCS':
+                self.plan = self.ucs_search(problem)
+        
+        # Return the first action from the plan
+        if self.plan:
+            return self.plan.pop(0)
+            
+        return 'Stop' # Fallback if search fails
 
     def bfs_search(self, problem):
         """
@@ -26,7 +80,6 @@ class SearchAgent:
         Uses a FIFO queue via deque.popleft().
         Maintains a 'reached' set to operate as a Graph Search.
         """
-        # queue stores tuples of (state, path_of_actions)
         queue = deque([(problem.get_start_state(), [])])
         reached = set([problem.get_start_state()])
 
@@ -49,7 +102,6 @@ class SearchAgent:
         Uses a LIFO stack via list.pop().
         Maintains a 'reached' set to operate as a Graph Search.
         """
-        # stack stores tuples of (state, path_of_actions)
         stack = [(problem.get_start_state(), [])]
         reached = set()
 
@@ -59,11 +111,9 @@ class SearchAgent:
             if problem.is_goal_state(state):
                 return path
 
-            # To avoid cycles, only expand if we haven't reached this state
             if state not in reached:
                 reached.add(state)
                 for next_state, action, cost in problem.get_successors(state):
-                    # Minor optimization to prevent pushing obviously visited nodes
                     if next_state not in reached:
                         stack.append((next_state, path + [action]))
 
@@ -76,12 +126,8 @@ class SearchAgent:
         Maintains a 'reached' dictionary to map states to their lowest known cost.
         """
         pq = []
-        # Push (cost, tie_breaker, state, path)
-        # The tie_breaker ensures we don't accidentally try to compare 'state' objects if costs tie
-        count = 0
+        count = 0 
         heapq.heappush(pq, (0, count, problem.get_start_state(), []))
-
-        # Dictionary acts as our 'reached' set but also stores the best cost to reach a state
         reached = {}
 
         while pq:
@@ -90,17 +136,13 @@ class SearchAgent:
             if problem.is_goal_state(state):
                 return path
 
-            # If this state is unvisited, or we found a strictly cheaper way here
             if state not in reached or current_cost < reached[state]:
                 reached[state] = current_cost
-
+                
                 for next_state, action, step_cost in problem.get_successors(state):
                     new_cost = current_cost + step_cost
-
-                    # Only push to heap if it's unvisited or we found a cheaper path to it
                     if next_state not in reached or new_cost < reached.get(next_state, float('inf')):
                         count += 1
-                        heapq.heappush(
-                            pq, (new_cost, count, next_state, path + [action]))
+                        heapq.heappush(pq, (new_cost, count, next_state, path + [action]))
 
         return []
