@@ -1,6 +1,7 @@
 # visual_grid_game.py
 import random
 import tkinter as tk
+from agent import SearchAgent
 
 
 class VisualGridHuntGame:
@@ -141,6 +142,9 @@ class GridGameGUI:
                              fg="white")
         self.btn.pack(pady=5)
 
+        self.agent = SearchAgent()
+        self.agent.active_algo = 'AStar'
+
         self.draw_grid()
 
     def draw_grid(self):
@@ -194,8 +198,10 @@ class GridGameGUI:
         self.btn.config(state="disabled")
 
         def step():
-            if not self.env.is_done():
-                action = random.choice(['Up', 'Down', 'Left', 'Right'])
+            if not self.env.is_done():                
+                percept = self.env.get_percept()          
+                
+                action = self.agent.sense_and_act(percept)
                 self.env.execute_action(action)
 
                 self.draw_grid()
