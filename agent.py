@@ -2,6 +2,7 @@ import random
 from collections import deque
 import heapq
 import math
+from logic_engine import KnowledgeBase
 
 
 class GreedyGridAgent:
@@ -22,7 +23,10 @@ class SearchAgent:
 
     def __init__(self):
         self.plan = []
-        self.active_algo = 'BFS'
+        self.active_algo = 'AStar'  # Switched to AStar to test Lab 07 logic
+        self.kb = KnowledgeBase()
+        self.kb.tell_rule(['TargetVisible', 'HasDust'], 'SafeToEngage')
+        self.kb.tell_rule(['SafeToEngage', 'BloodseekerMissing'], 'Retreat')
 
     def sense_and_act(self, percept: dict) -> str:
         # If the plan is empty, we need to calculate a new path
@@ -64,6 +68,12 @@ class SearchAgent:
 
             problem = PositionSearchProblem()
 
+            # Define sample facts as per Lab 07 Step 3.3
+            tile_facts = {
+                (1, 0): ['TargetVisible', 'HasDust', 'BloodseekerMissing'],  # deduces Retreat: blocked
+                (0, 1): ['TargetVisible', 'HasDust'],                        # SafeToEngage only: allowed
+            }
+
             # Execute the search method matching self.active_algo
             if self.active_algo == 'BFS':
                 self.plan = self.bfs_search(problem)
@@ -73,7 +83,7 @@ class SearchAgent:
                 self.plan = self.ucs_search(problem)
             elif self.active_algo == 'AStar':
                 self.plan = self.astar_search(
-                    problem, closest_food, heuristic_type='manhattan')
+                    problem, closest_food, heuristic_type='manhattan', tile_facts=tile_facts)
 
         # Return the first action from the plan
         if self.plan:
@@ -155,16 +165,20 @@ class SearchAgent:
 
         return []
 
-    def astar_search(self, problem, goal_pos, heuristic_type='manhattan'):
+    def astar_search(self, problem, goal_pos, heuristic_type='manhattan', tile_facts=None):
         """
         A* Search: Explores nodes ordered by f(n) = g(n) + h(n).
         Uses a Priority Queue via heapq.heappop().
+        Integrates Knowledge Base to verify logical feasibility of tiles.
         """
+        if tile_facts is None:
+            tile_facts = {}
+
         pq = []
         count = 0
         start_state = problem.get_start_state()
 
-        # Ensure start_state is a tuple
+        # Ensure states are tuples for dictionary hashing
         start_state = tuple(start_state)
         goal_pos = tuple(goal_pos)
 
@@ -188,6 +202,20 @@ class SearchAgent:
 
                 for next_state, action, step_cost in problem.get_successors(state):
                     next_tuple = tuple(next_state)
+
+                    # --- LOGICAL FEASIBILITY CHECK ---
+                    self.kb.clear_facts()
+                    # Feed that tile's facts into the KB
+                    for fact in tile_facts.get(next_tuple, []):
+                        self.kb.tell_fact(fact)
+                    
+                    self.kb.forward_chain()
+                    
+                    # If 'Retreat' is deduced, mark the tile as Infeasible
+                    if 'Retreat' in self.kb.facts:
+                        continue
+                    # ---------------------------------
+
                     new_g = current_cost + step_cost
                     h_val = (self.manhattan_distance(next_tuple, goal_pos) if heuristic_type == 'manhattan'
                              else self.euclidean_distance(next_tuple, goal_pos))
